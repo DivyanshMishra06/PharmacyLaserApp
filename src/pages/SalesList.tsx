@@ -1,0 +1,316 @@
+import { useEffect, useMemo, useState } from 'react';
+import toast from 'react-hot-toast';
+import { Search, X } from 'lucide-react';
+import { useSales } from '../hooks/useSales';
+import type { Sale, SaleFormData, MedicineItem } from '../types';
+import { formatCurrency, formatDate, todayISO } from '../utils/helpers';
+import SaleForm from '../components/SaleForm';
+import InvoiceModal from '../components/InvoiceModal';
+
+function groupByInvoice(sales: Sale[]): Sale[][] {
+  const map = new Map<string, Sale[]>();
+  const order: string[] = [];
+  for (const sale of sales) {
+    if (!map.has(sale.invoice_number)) {
+      map.set(sale.invoice_number, []);
+      order.push(sale.invoice_number);
+    }
+    map.get(sale.invoice_number)!.push(sale);
+  }
+  return order.map((inv) => map.get(inv)!);
+}
+
+export default function SalesList() {
+  const { fetchTodaySales, deleteSale, updateSale, loading } = useSales();
+  const [sales, setSales] = useState<Sale[]>([]);
+  const [search, setSearch] = useState('');
+  const [selectedInvoiceNumber, setSelectedInvoiceNumber] = useState<string | null>(null);
+  const [editingSale, setEditingSale] = useState<Sale | null>(null);
+  const [editForm, setEditForm] = useState<SaleFormData | null>(null);
+
+  useEffect(() => {
+    fetchTodaySales().then(setSales);
+  }, [fetchTodaySales]);
+
+  const filtered = sales.filter((s) => {
+    const q = search.toLowerCase();
+    return (
+      s.medicine_name.toLowerCase().includes(q) ||
+      s.invoice_number.toLowerCase().includes(q) ||
+      (s.customer_name || '').toLowerCase().includes(q) ||
+      (s.mobile_number || '').includes(q)
+    );
+  });
+
+  const filteredGroups = useMemo(() => groupByInvoice(filtered), [filtered]);
+
+  const totalAmount = filtered.reduce((s, x) => s + x.total_amount, 0);
+
+  // Sales for the currently selected invoice (live, from current state)
+  const invoiceModalSales = selectedInvoiceNumber
+    ? sales.filter((s) => s.invoice_number === selectedInvoiceNumber)
+    : null;
+
+  const handleDelete = async (id: string) => {
+    const ok = await deleteSale(id);
+    if (ok) {
+      setSales((prev) => prev.filter((s) => s.id !== id));
+      toast.success('Sale deleted');
+    } else {
+      toast.error('Failed to delete sale');
+    }
+  };
+
+  const handleEditFromModal = (sale: Sale) => {
+    setSelectedInvoiceNumber(null);
+    setEditingSale(sale);
+    setEditForm({
+      customer_name: sale.customer_name || '',
+      mobile_number: sale.mobile_number || '',
+      payment_mode: sale.payment_mode,
+      remarks: sale.remarks || '',
+      bill_discount: '',
+      medicines: [{
+        medicine_name: sale.medicine_name,
+        batch_number: sale.batch_number || '',
+        expiry_date: sale.expiry_date || '',
+        quantity: String(sale.quantity),
+        mrp: String(sale.mrp),
+        selling_rate: String(sale.selling_rate),
+        discount: String(sale.discount || ''),
+        total_amount: String(sale.total_amount),
+      }],
+    });
+  };
+
+  const handleEditSave = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!editingSale || !editForm) return;
+    const updated = await updateSale(editingSale.id, editForm, editingSale.invoice_number);
+    if (updated) {
+      setSales((prev) => prev.map((s) => s.id === updated.id ? updated : s));
+      toast.success('Sale updated');
+      setEditingSale(null);
+      setEditForm(null);
+    } else {
+      toast.error('Failed to update sale');
+    }
+  };
+
+  const paymentBadge = (mode: string) => {
+    if (mode === 'Cash') return <span className="badge-cash">{mode}</span>;
+    if (mode === 'UPI') return <span className="badge-upi">{mode}</span>;
+    return <span className="badge-credit">{mode}</span>;
+  };
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h1 className="page-title">Today's Sales</h1>
+        <p className="text-gray-500 text-sm">{formatDate(todayISO())} · {filteredGroups.length} invoices</p>
+      </div>
+
+      {/* Search */}
+      <div className="relative">
+        <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+        <input
+          type="text"
+          className="input-field pl-10"
+          placeholder="Search by medicine, invoice, customer or mobile..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        {search && (
+          <button
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            onClick={() => setSearch('')}
+          >
+            <X size={18} />
+          </button>
+        )}
+      </div>
+
+      {/* Summary strip */}
+      {filteredGroups.length > 0 && (
+        <div className="flex items-center justify-between bg-blue-50 border border-blue-100 rounded-lg px-4 py-2.5">
+          <span className="text-sm text-gray-600">{filteredGroups.length} invoices · {filtered.length} medicines</span>
+          <span className="font-bold text-blue-700">{formatCurrency(totalAmount)}</span>
+        </div>
+      )}
+
+      {loading && <div className="text-center py-10 text-gray-400">Loading...</div>}
+
+      {!loading && filteredGroups.length === 0 && (
+        <div className="card text-center py-10 text-gray-400">
+          {search ? `No results for "${search}"` : 'No sales recorded today'}
+        </div>
+      )}
+
+      {/* Mobile Cards */}
+      {!loading && filteredGroups.length > 0 && (
+        <div className="space-y-3 sm:hidden">
+          {filteredGroups.map((group) => {
+            const first = group[0];
+            const groupTotal = group.reduce((s, x) => s + x.total_amount, 0);
+            return (
+              <div key={first.invoice_number} className="card space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <button
+                      onClick={() => setSelectedInvoiceNumber(first.invoice_number)}
+                      className="font-mono text-sm text-blue-600 font-semibold hover:underline text-left"
+                    >
+                      {first.invoice_number}
+                    </button>
+                    <p className="text-sm font-medium text-gray-900 mt-0.5">
+                      {group.length === 1
+                        ? first.medicine_name
+                        : `${first.medicine_name} +${group.length - 1} more`}
+                    </p>
+                    {first.customer_name && (
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        {first.customer_name}{first.mobile_number ? ` · ${first.mobile_number}` : ''}
+                      </p>
+                    )}
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <p className="font-bold text-gray-900">{formatCurrency(groupTotal)}</p>
+                    {paymentBadge(first.payment_mode)}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Desktop Table */}
+      {!loading && filteredGroups.length > 0 && (
+        <div className="card hidden sm:block overflow-x-auto">
+          <table className="min-w-full">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-200">
+                <th className="table-header">Invoice</th>
+                <th className="table-header">Medicines</th>
+                <th className="table-header text-right">Total</th>
+                <th className="table-header">Payment</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredGroups.map((group) => {
+                const first = group[0];
+                const groupTotal = group.reduce((s, x) => s + x.total_amount, 0);
+                return (
+                  <tr key={first.invoice_number} className="hover:bg-gray-50 transition-colors">
+                    <td className="table-cell">
+                      <button
+                        onClick={() => setSelectedInvoiceNumber(first.invoice_number)}
+                        className="font-mono text-xs text-blue-600 hover:underline font-semibold"
+                      >
+                        {first.invoice_number}
+                      </button>
+                      {first.customer_name && (
+                        <p className="text-xs text-gray-500 mt-0.5">{first.customer_name}</p>
+                      )}
+                    </td>
+                    <td className="table-cell text-gray-700 max-w-[260px] truncate">
+                      {group.length === 1
+                        ? first.medicine_name
+                        : `${first.medicine_name} +${group.length - 1} more`}
+                    </td>
+                    <td className="table-cell text-right font-semibold">
+                      {formatCurrency(groupTotal)}
+                    </td>
+                    <td className="table-cell">{paymentBadge(first.payment_mode)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            <tfoot>
+              <tr className="bg-gray-50 border-t-2 border-gray-300">
+                <td colSpan={2} className="px-3 py-2 text-sm font-semibold text-gray-600">
+                  Total ({filteredGroups.length} invoices)
+                </td>
+                <td className="px-3 py-2 text-right font-bold text-gray-900">
+                  {formatCurrency(totalAmount)}
+                </td>
+                <td />
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+
+      {/* Invoice Detail Modal */}
+      {invoiceModalSales && invoiceModalSales.length > 0 && (
+        <InvoiceModal
+          sales={invoiceModalSales}
+          onClose={() => setSelectedInvoiceNumber(null)}
+          onEdit={handleEditFromModal}
+          onDelete={handleDelete}
+        />
+      )}
+
+      {/* Edit Modal */}
+      {editingSale && editForm && (
+        <div className="fixed inset-0 bg-black/50 z-60 flex items-end sm:items-center justify-center p-4">
+          <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-5 py-4 flex items-center justify-between rounded-t-2xl">
+              <div>
+                <h2 className="font-bold text-gray-900">Edit Sale</h2>
+                <p className="text-xs text-blue-600 font-mono">{editingSale.invoice_number}</p>
+              </div>
+              <button
+                onClick={() => { setEditingSale(null); setEditForm(null); }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X size={22} />
+              </button>
+            </div>
+            <div className="p-5">
+              <SaleForm
+                formData={editForm}
+                onFieldChange={(field, value) =>
+                  setEditForm((prev) => prev ? { ...prev, [field]: value } : null)
+                }
+                onMedicineChange={(idx, field, value) =>
+                  setEditForm((prev) => {
+                    if (!prev) return null;
+                    const medicines = [...prev.medicines];
+                    const updated = { ...medicines[idx], [field]: value };
+                    if (field === 'quantity' || field === 'mrp' || field === 'discount') {
+                      const q = parseFloat(field === 'quantity' ? value : updated.quantity) || 0;
+                      const m = parseFloat(field === 'mrp' ? value : updated.mrp) || 0;
+                      const d = parseFloat(field === 'discount' ? value : updated.discount) || 0;
+                      updated.total_amount = (q > 0 || m > 0) ? Math.max(0, q * m * (1 - d / 100)).toFixed(2) : '';
+                    }
+                    medicines[idx] = updated;
+                    return { ...prev, medicines };
+                  })
+                }
+                onAddMedicine={() =>
+                  setEditForm((prev) => prev ? {
+                    ...prev,
+                    medicines: [...prev.medicines, {
+                      medicine_name: '', batch_number: '', expiry_date: '',
+                      quantity: '', mrp: '', selling_rate: '', discount: '', total_amount: '',
+                    } as MedicineItem],
+                  } : null)
+                }
+                onRemoveMedicine={(idx) =>
+                  setEditForm((prev) => prev ? {
+                    ...prev,
+                    medicines: prev.medicines.filter((_, i) => i !== idx),
+                  } : null)
+                }
+                onSubmit={handleEditSave}
+                loading={loading}
+                isEdit
+              />
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
