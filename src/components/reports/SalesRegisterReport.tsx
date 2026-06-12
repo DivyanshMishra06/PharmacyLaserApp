@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { FileDown, FileText } from 'lucide-react';
+import { FileDown, FileText, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
 import type { Sale } from '../../types';
 import { formatCurrency, formatDate } from '../../utils/helpers';
 import InvoiceModal from '../InvoiceModal';
@@ -31,10 +31,49 @@ function PaymentBadge({ mode }: { mode: string }) {
   return <span className="badge-credit">{mode}</span>;
 }
 
+type SortKey = 'date' | 'invoice' | 'customer' | 'amount' | 'payment' | 'items';
+type SortDir = 'asc' | 'desc';
+
+function SortIcon({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey | null; sortDir: SortDir }) {
+  if (sortKey !== col) return <ChevronsUpDown size={13} className="text-gray-400 inline ml-1" />;
+  return sortDir === 'asc'
+    ? <ChevronUp size={13} className="text-blue-600 inline ml-1" />
+    : <ChevronDown size={13} className="text-blue-600 inline ml-1" />;
+}
+
 export default function SalesRegisterReport({ sales, dateLabel, startDate }: Props) {
   const [selectedInvoice, setSelectedInvoice] = useState<Sale[] | null>(null);
+  const [sortKey, setSortKey] = useState<SortKey | null>(null);
+  const [sortDir, setSortDir] = useState<SortDir>('asc');
+
+  function handleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDir('asc');
+    }
+  }
 
   const invoiceGroups = useMemo(() => groupByInvoice(sales), [sales]);
+
+  const sortedGroups = useMemo(() => {
+    if (!sortKey) return invoiceGroups;
+    return [...invoiceGroups].sort((a, b) => {
+      const fa = a[0], fb = b[0];
+      const aTotal = a.reduce((s, x) => s + x.total_amount, 0);
+      const bTotal = b.reduce((s, x) => s + x.total_amount, 0);
+      let cmp = 0;
+      if (sortKey === 'date') cmp = fa.sale_date.localeCompare(fb.sale_date);
+      else if (sortKey === 'invoice') cmp = fa.invoice_number.localeCompare(fb.invoice_number);
+      else if (sortKey === 'customer') cmp = (fa.customer_name || '').localeCompare(fb.customer_name || '');
+      else if (sortKey === 'amount') cmp = aTotal - bTotal;
+      else if (sortKey === 'payment') cmp = fa.payment_mode.localeCompare(fb.payment_mode);
+      else if (sortKey === 'items') cmp = a.length - b.length;
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+  }, [invoiceGroups, sortKey, sortDir]);
+
   const summary = useMemo(() => ({
     total: sales.reduce((s, x) => s + x.total_amount, 0),
     cash: sales.filter((x) => x.payment_mode === 'Cash').reduce((s, x) => s + x.total_amount, 0),
@@ -96,16 +135,26 @@ export default function SalesRegisterReport({ sales, dateLabel, startDate }: Pro
         <table className="min-w-full">
           <thead>
             <tr className="bg-gray-50 border-b border-gray-200">
-              <th className="table-header">Date</th>
-              <th className="table-header">Invoice</th>
-              <th className="table-header">Customer</th>
-              <th className="table-header text-right">Amount</th>
-              <th className="table-header">Payment</th>
-              <th className="table-header text-center">Items</th>
+              {([
+                { key: 'date' as SortKey, label: 'Date', cls: '' },
+                { key: 'invoice' as SortKey, label: 'Invoice', cls: '' },
+                { key: 'customer' as SortKey, label: 'Customer', cls: '' },
+                { key: 'amount' as SortKey, label: 'Amount', cls: 'text-right' },
+                { key: 'payment' as SortKey, label: 'Payment', cls: '' },
+                { key: 'items' as SortKey, label: 'Items', cls: 'text-center' },
+              ]).map(({ key, label, cls }) => (
+                <th
+                  key={key}
+                  className={`table-header cursor-pointer select-none hover:bg-gray-100 transition-colors ${cls}`}
+                  onClick={() => handleSort(key)}
+                >
+                  {label}<SortIcon col={key} sortKey={sortKey} sortDir={sortDir} />
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
-            {invoiceGroups.map((group) => {
+            {sortedGroups.map((group) => {
               const first = group[0];
               const groupTotal = group.reduce((s, x) => s + x.total_amount, 0);
               return (
@@ -130,7 +179,7 @@ export default function SalesRegisterReport({ sales, dateLabel, startDate }: Pro
           <tfoot>
             <tr className="bg-gray-50 border-t-2 border-gray-300">
               <td colSpan={3} className="px-3 py-2.5 text-sm font-semibold text-gray-600">
-                Total ({invoiceGroups.length} invoices)
+                Total ({sortedGroups.length} invoices)
               </td>
               <td className="px-3 py-2.5 text-right font-bold text-gray-900 tabular-nums">
                 {formatCurrency(summary.total)}
