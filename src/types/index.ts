@@ -1,6 +1,7 @@
 export type PaymentMode = 'Cash' | 'UPI' | 'Credit';
 
 export interface MedicineItem {
+  id?: string;           // present for existing DB rows, absent for newly added rows
   medicine_name: string;
   batch_number: string;
   expiry_date: string;
@@ -34,7 +35,7 @@ export interface Sale {
 export interface SaleFormData {
   customer_name: string;
   mobile_number: string;
-  payment_mode: PaymentMode;
+  payment_mode: PaymentMode | '';
   remarks: string;
   bill_discount: string;
   medicines: MedicineItem[];

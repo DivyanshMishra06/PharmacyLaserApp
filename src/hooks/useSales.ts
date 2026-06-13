@@ -69,6 +69,8 @@ export function useSales() {
           quantity: parseFloat(med.quantity) || 0,
           mrp: mrpVal,
           selling_rate: sellingRate,
+          discount: discVal,
+          bill_discount: parseFloat(formData.bill_discount) || 0,
           total_amount: parseFloat((rowTotal * billDiscFactor).toFixed(2)) || 0,
           payment_mode: formData.payment_mode,
           customer_name: formData.customer_name.trim() || null,
@@ -114,8 +116,8 @@ export function useSales() {
       const invoiceFields = {
         payment_mode: formData.payment_mode,
         customer_name: formData.customer_name.trim() || null,
+        mobile_number: mobile || null,
         remarks: formData.remarks.trim() || null,
-        ...(mobile ? { mobile_number: mobile } : {}),
       };
 
       const payload = {
@@ -123,6 +125,7 @@ export function useSales() {
         quantity: parseFloat(med.quantity) || 0,
         mrp: mrpVal,
         selling_rate: sellingRate,
+        discount: discVal,
         total_amount: parseFloat(med.total_amount) || 0,
         ...invoiceFields,
         ...(batch ? { batch_number: batch } : {}),
@@ -151,6 +154,124 @@ export function useSales() {
       const msg = err instanceof Error ? err.message : 'Failed to update sale';
       setError(msg);
       return null;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const saveInvoiceEdit = useCallback(async (
+    invoiceNumber: string,
+    originalSaleDate: string,
+    formData: SaleFormData,
+    removedIds: string[],
+  ): Promise<{ updated: Sale[]; inserted: Sale[] } | null> => {
+    setLoading(true);
+    setError(null);
+    try {
+      const mobile = formData.mobile_number.trim();
+      const billDiscFactor = 1 - (parseFloat(formData.bill_discount) || 0) / 100;
+      const invoiceFields = {
+        payment_mode: formData.payment_mode,
+        customer_name: formData.customer_name.trim() || null,
+        mobile_number: mobile || null,
+        remarks: formData.remarks.trim() || null,
+      };
+
+      // 1. Delete removed rows
+      if (removedIds.length > 0) {
+        const { error: delErr } = await supabase.from('sales').delete().in('id', removedIds);
+        if (delErr) throw delErr;
+      }
+
+      // 2. Update existing rows
+      const billDiscVal = parseFloat(formData.bill_discount) || 0;
+      const updated: Sale[] = [];
+      for (const med of formData.medicines.filter((m) => m.id)) {
+        const mrpVal = parseFloat(med.mrp) || 0;
+        const discVal = parseFloat(med.discount) || 0;
+        const rowTotal = parseFloat(med.total_amount) || 0;
+        const { data, error: updErr } = await supabase
+          .from('sales')
+          .update({
+            medicine_name: med.medicine_name.trim(),
+            quantity: parseFloat(med.quantity) || 0,
+            mrp: mrpVal,
+            selling_rate: parseFloat((mrpVal * (1 - discVal / 100)).toFixed(2)),
+            discount: discVal,
+            bill_discount: billDiscVal,
+            total_amount: parseFloat((rowTotal * billDiscFactor).toFixed(2)),
+            batch_number: med.batch_number.trim() || null,
+            expiry_date: med.expiry_date.trim() || null,
+            ...invoiceFields,
+          })
+          .eq('id', med.id!)
+          .select()
+          .single();
+        if (updErr) throw updErr;
+        if (data) updated.push(data);
+      }
+
+      // 3. Insert new rows (use original sale_date, not today)
+      const inserted: Sale[] = [];
+      const newMeds = formData.medicines.filter((m) => !m.id);
+      if (newMeds.length > 0) {
+        const records = newMeds.map((med) => {
+          const mrpVal = parseFloat(med.mrp) || 0;
+          const discVal = parseFloat(med.discount) || 0;
+          const rowTotal = parseFloat(med.total_amount) || 0;
+          const batch = med.batch_number.trim();
+          const expiry = med.expiry_date.trim();
+          return {
+            sale_date: originalSaleDate,
+            invoice_number: invoiceNumber,
+            medicine_name: med.medicine_name.trim(),
+            quantity: parseFloat(med.quantity) || 0,
+            mrp: mrpVal,
+            selling_rate: parseFloat((mrpVal * (1 - discVal / 100)).toFixed(2)),
+            discount: discVal,
+            bill_discount: billDiscVal,
+            total_amount: parseFloat((rowTotal * billDiscFactor).toFixed(2)),
+            ...invoiceFields,
+            ...(batch ? { batch_number: batch } : {}),
+            ...(expiry ? { expiry_date: expiry } : {}),
+          };
+        });
+        const { data, error: insErr } = await supabase.from('sales').insert(records).select();
+        if (insErr) throw insErr;
+        if (data) inserted.push(...data);
+      }
+
+      return { updated, inserted };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to save invoice';
+      setError(msg);
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const updateInvoiceCustomer = useCallback(async (
+    invoiceNumber: string,
+    customerName: string,
+    mobileNumber: string,
+  ): Promise<boolean> => {
+    setLoading(true);
+    setError(null);
+    try {
+      const { error: err } = await supabase
+        .from('sales')
+        .update({
+          customer_name: customerName.trim() || null,
+          mobile_number: mobileNumber.trim() || null,
+        })
+        .eq('invoice_number', invoiceNumber);
+      if (err) throw err;
+      return true;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to update customer info';
+      setError(msg);
+      return false;
     } finally {
       setLoading(false);
     }
@@ -237,6 +358,8 @@ export function useSales() {
     fetchAllSales,
     createSale,
     updateSale,
+    saveInvoiceEdit,
+    updateInvoiceCustomer,
     deleteSale,
     getNextInvoiceNumber,
     bulkCreateSales,

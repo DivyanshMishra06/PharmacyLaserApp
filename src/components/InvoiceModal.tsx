@@ -1,23 +1,49 @@
 import { useState, useEffect } from 'react';
-import { X, User, Phone, Receipt, Edit2, Trash2 } from 'lucide-react';
+import { X, User, Phone, Receipt, Edit2, Trash2, Check, Pencil, Printer } from 'lucide-react';
 import type { Sale } from '../types';
 import { formatCurrency, formatDate } from '../utils/helpers';
+import { printInvoice } from '../utils/printInvoice';
 
 interface InvoiceModalProps {
   sales: Sale[];
   onClose: () => void;
   onEdit?: (sale: Sale) => void;
   onDelete?: (id: string) => void;
+  onUpdateCustomer?: (invoiceNumber: string, customerName: string, mobileNumber: string) => Promise<boolean>;
 }
 
-export default function InvoiceModal({ sales, onClose, onEdit, onDelete }: InvoiceModalProps) {
+export default function InvoiceModal({ sales, onClose, onEdit, onDelete, onUpdateCustomer }: InvoiceModalProps) {
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [editingCustomer, setEditingCustomer] = useState(false);
+  const [draftName, setDraftName] = useState('');
+  const [draftMobile, setDraftMobile] = useState('');
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { if (editingCustomer) setEditingCustomer(false); else onClose(); }
+    };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [onClose]);
+  }, [onClose, editingCustomer]);
+
+  const startEditCustomer = () => {
+    setDraftName(first.customer_name || '');
+    setDraftMobile(first.mobile_number || '');
+    setEditingCustomer(true);
+  };
+
+  const cancelEditCustomer = () => setEditingCustomer(false);
+
+  const saveCustomer = async () => {
+    if (!onUpdateCustomer) return;
+    setSaving(true);
+    const ok = await onUpdateCustomer(first.invoice_number, draftName, draftMobile);
+    setSaving(false);
+    if (ok) setEditingCustomer(false);
+  };
+
+  const handlePrint = () => printInvoice(sales);
 
   if (sales.length === 0) return null;
 
@@ -49,26 +75,85 @@ export default function InvoiceModal({ sales, onClose, onEdit, onDelete }: Invoi
             </div>
             {paymentBadge(first.payment_mode)}
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
-            <X size={22} />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handlePrint}
+              className="flex items-center gap-1.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-lg transition-colors"
+            >
+              <Printer size={14} /> Print / PDF
+            </button>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+              <X size={22} />
+            </button>
+          </div>
         </div>
 
         <div className="p-5 space-y-4">
           {/* Customer info */}
-          {(first.customer_name || first.mobile_number) && (
-            <div className="flex flex-wrap items-center gap-4 bg-gray-50 rounded-lg px-4 py-3">
-              {first.customer_name && (
+          {onUpdateCustomer && editingCustomer ? (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 space-y-2">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 flex-1">
+                  <User size={14} className="text-gray-400 shrink-0" />
+                  <input
+                    autoFocus
+                    type="text"
+                    className="input-field py-1.5 text-sm"
+                    placeholder="Customer name"
+                    value={draftName}
+                    onChange={(e) => setDraftName(e.target.value)}
+                  />
+                </div>
+                <div className="flex items-center gap-2 flex-1">
+                  <Phone size={14} className="text-gray-400 shrink-0" />
+                  <input
+                    type="tel"
+                    className="input-field py-1.5 text-sm"
+                    placeholder="Mobile number"
+                    value={draftMobile}
+                    onChange={(e) => setDraftMobile(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={cancelEditCustomer}
+                  className="px-3 py-1 text-xs font-medium text-gray-600 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={saveCustomer}
+                  disabled={saving}
+                  className="flex items-center gap-1.5 px-3 py-1 text-xs font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-60"
+                >
+                  <Check size={12} /> {saving ? 'Saving...' : 'Save'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center justify-between gap-3 bg-gray-50 rounded-lg px-4 py-3">
+              <div className="flex flex-wrap items-center gap-4">
                 <div className="flex items-center gap-2">
                   <User size={14} className="text-gray-400" />
-                  <span className="text-sm font-medium text-gray-700">{first.customer_name}</span>
+                  <span className="text-sm font-medium text-gray-700">
+                    {first.customer_name || <span className="text-gray-400 italic">No customer name</span>}
+                  </span>
                 </div>
-              )}
-              {first.mobile_number && (
                 <div className="flex items-center gap-2">
                   <Phone size={14} className="text-gray-400" />
-                  <span className="text-sm text-gray-600">{first.mobile_number}</span>
+                  <span className="text-sm text-gray-600">
+                    {first.mobile_number || <span className="text-gray-400 italic">No mobile</span>}
+                  </span>
                 </div>
+              </div>
+              {onUpdateCustomer && (
+                <button
+                  onClick={startEditCustomer}
+                  className="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 px-2 py-1 rounded-md transition-colors"
+                >
+                  <Pencil size={12} /> Edit
+                </button>
               )}
             </div>
           )}

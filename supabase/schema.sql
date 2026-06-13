@@ -64,6 +64,31 @@ create policy "Allow all access to sales"
 --   with check (true);
 
 -- ============================================================
+-- Credit Payments Table
+-- ============================================================
+create table if not exists public.credit_payments (
+  id            uuid default uuid_generate_v4() primary key,
+  customer_name text not null,
+  mobile_number text,
+  amount        numeric(10, 2) not null check (amount > 0),
+  payment_mode  text not null check (payment_mode in ('Cash', 'UPI')),
+  paid_date     date not null default current_date,
+  remarks       text,
+  created_at    timestamptz default now() not null
+);
+
+create index if not exists credit_payments_customer_idx on public.credit_payments (customer_name);
+create index if not exists credit_payments_paid_date_idx on public.credit_payments (paid_date desc);
+
+alter table public.credit_payments enable row level security;
+
+create policy "Allow all access to credit_payments"
+  on public.credit_payments
+  for all
+  using (true)
+  with check (true);
+
+-- ============================================================
 -- Sample Data (optional - remove in production)
 -- ============================================================
 -- insert into public.sales (sale_date, invoice_number, medicine_name, quantity, mrp, selling_rate, total_amount, payment_mode, customer_name)

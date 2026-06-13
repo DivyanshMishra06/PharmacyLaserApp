@@ -5,7 +5,9 @@ import {
   PlusCircle, TrendingUp, TrendingDown,
 } from 'lucide-react';
 import { format, subDays, startOfMonth, endOfMonth, subMonths } from 'date-fns';
+import toast from 'react-hot-toast';
 import { useSales } from '../hooks/useSales';
+import { useCreditPayments } from '../hooks/useCreditPayments';
 import { supabase } from '../utils/supabase';
 import type { Sale, DashboardStats } from '../types';
 import { formatCurrency, formatDateTime, todayISO } from '../utils/helpers';
@@ -71,6 +73,7 @@ interface PeriodTotals {
 
 export default function Dashboard() {
   const { fetchSalesByDateRange } = useSales();
+  const { recordPayment } = useCreditPayments();
   const [sales, setSales] = useState<Sale[]>([]);
   const [dataLoaded, setDataLoaded] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState<Sale[] | null>(null);
@@ -102,7 +105,8 @@ export default function Dashboard() {
       fetchSalesByDateRange(thisMonthStart, todayStr),
       fetchSalesByDateRange(lastMonthStart, lastMonthEnd),
       supabase.from('sales').select('customer_name, mobile_number, total_amount').eq('payment_mode', 'Credit'),
-    ]).then(([todayData, ydayData, thisMonthData, lastMonthData, creditRes]) => {
+      supabase.from('credit_payments').select('customer_name, amount'),
+    ]).then(([todayData, ydayData, thisMonthData, lastMonthData, creditRes, paymentsRes]) => {
       const uniqueInvoices = (arr: Sale[]) =>
         new Set(arr.map((s) => s.invoice_number)).size;
 
@@ -123,6 +127,8 @@ export default function Dashboard() {
       setYesterday({ total: ydayData.reduce((s, x) => s + x.total_amount, 0), invoices: uniqueInvoices(ydayData) });
       setThisMonth({ total: thisMonthData.reduce((s, x) => s + x.total_amount, 0), invoices: uniqueInvoices(thisMonthData) });
       setLastMonth({ total: lastMonthData.reduce((s, x) => s + x.total_amount, 0), invoices: uniqueInvoices(lastMonthData) });
+
+      // Build gross credit map
       const creditRows = creditRes.data || [];
       const creditMap = new Map<string, CustomerCredit>();
       creditRows.forEach((r: { customer_name: string; mobile_number: string; total_amount: number }) => {
@@ -132,12 +138,52 @@ export default function Dashboard() {
         }
         creditMap.get(key)!.amount += r.total_amount || 0;
       });
-      const byCustomer = [...creditMap.values()].sort((a, b) => b.amount - a.amount);
+
+      // Subtract payments to get net outstanding
+      const paymentsRows = paymentsRes.data || [];
+      const paymentsMap = new Map<string, number>();
+      paymentsRows.forEach((r: { customer_name: string; amount: number }) => {
+        paymentsMap.set(r.customer_name, (paymentsMap.get(r.customer_name) || 0) + r.amount);
+      });
+      const byCustomer = [...creditMap.values()]
+        .map((c) => ({ ...c, amount: Math.max(0, c.amount - (paymentsMap.get(c.name) || 0)) }))
+        .filter((c) => c.amount > 0)
+        .sort((a, b) => b.amount - a.amount);
+
       setCreditByCustomer(byCustomer);
       setAllTimeCredit(byCustomer.reduce((s, c) => s + c.amount, 0));
       setDataLoaded(true);
     });
   }, [fetchSalesByDateRange]);
+
+  const handlePayOff = async (
+    customer: CustomerCredit,
+    amount: number,
+    mode: 'Cash' | 'UPI',
+    date: string,
+    remarks: string,
+  ) => {
+    const ok = await recordPayment({
+      customer_name: customer.name,
+      mobile_number: customer.mobile || undefined,
+      amount,
+      payment_mode: mode,
+      paid_date: date,
+      remarks,
+    });
+    if (ok) {
+      toast.success(`Payment of ${formatCurrency(amount)} recorded for ${customer.name}`);
+      // Optimistic update — subtract from local state immediately
+      setCreditByCustomer((prev) =>
+        prev
+          .map((c) => c.name === customer.name ? { ...c, amount: Math.max(0, c.amount - amount) } : c)
+          .filter((c) => c.amount > 0),
+      );
+      setAllTimeCredit((prev) => Math.max(0, prev - amount));
+    } else {
+      toast.error('Failed to record payment');
+    }
+  };
 
   const paymentBadge = (mode: string) => {
     if (mode === 'Cash') return <span className="badge-cash">{mode}</span>;
@@ -341,6 +387,7 @@ export default function Dashboard() {
           customers={creditByCustomer}
           total={allTimeCredit}
           onClose={() => setShowCreditModal(false)}
+          onPayOff={handlePayOff}
         />
       )}
 

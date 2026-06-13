@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { forwardRef, useEffect, useRef, useState } from 'react';
 
 interface Props {
   value: string;
@@ -10,9 +10,10 @@ interface Props {
   required?: boolean;
   autoFocus?: boolean;
   inputType?: string;
+  maxLength?: number;
 }
 
-export default function AutocompleteInput({
+const AutocompleteInput = forwardRef<HTMLInputElement, Props>(function AutocompleteInput({
   value,
   onChange,
   onSelect,
@@ -22,11 +23,16 @@ export default function AutocompleteInput({
   required,
   autoFocus,
   inputType = 'text',
-}: Props) {
+  maxLength,
+}, forwardedRef) {
   const [open, setOpen] = useState(false);
   const [highlighted, setHighlighted] = useState(-1);
   const [dropStyle, setDropStyle] = useState<React.CSSProperties>({});
-  const inputRef = useRef<HTMLInputElement>(null);
+  const internalRef = useRef<HTMLInputElement>(null);
+
+  const inputRef = {
+    get current() { return internalRef.current; },
+  } as React.RefObject<HTMLInputElement>;
   const listRef = useRef<HTMLUListElement>(null);
 
   // Filter: show all (up to 8) on empty, filter on typing
@@ -132,7 +138,11 @@ export default function AutocompleteInput({
   return (
     <>
       <input
-        ref={inputRef}
+        ref={(el) => {
+          (internalRef as React.MutableRefObject<HTMLInputElement | null>).current = el;
+          if (typeof forwardedRef === 'function') forwardedRef(el);
+          else if (forwardedRef) (forwardedRef as React.MutableRefObject<HTMLInputElement | null>).current = el;
+        }}
         type={inputType}
         value={value}
         autoComplete="off"
@@ -145,6 +155,7 @@ export default function AutocompleteInput({
         className={className}
         required={required}
         autoFocus={autoFocus}
+        maxLength={maxLength}
       />
 
       {open && filtered.length > 0 && (
@@ -170,4 +181,6 @@ export default function AutocompleteInput({
       )}
     </>
   );
-}
+});
+
+export default AutocompleteInput;

@@ -13,13 +13,13 @@ interface SaleFormProps {
   onRemoveMedicine: (index: number) => void;
   onDuplicateMedicine?: (index: number) => void;
   onSubmit: (e: React.FormEvent<HTMLFormElement>) => void;
-  onSubmitNew?: (e: React.SyntheticEvent) => void;
   loading: boolean;
   isEdit?: boolean;
   customerSuggestions?: string[];
   mobileSuggestions?: string[];
   medicineSuggestions?: string[];
   onMedicineNameSelect?: (index: number, name: string) => void;
+  submitLabel?: string;
 }
 
 // Input that fills the entire table cell — no own border, gets bg on focus
@@ -41,16 +41,24 @@ export default function SaleForm({
   onRemoveMedicine,
   onDuplicateMedicine,
   onSubmit,
-  onSubmitNew,
   loading,
   isEdit = false,
   customerSuggestions = [],
   mobileSuggestions = [],
   medicineSuggestions = [],
   onMedicineNameSelect,
+  submitLabel,
 }: SaleFormProps) {
   const lastRowRef = useRef<HTMLTableRowElement>(null);
+  const lastMedInputRef = useRef<HTMLInputElement>(null);
   const prevCount = useRef(formData.medicines.length);
+
+  const blockEnterOnInputs = (e: React.KeyboardEvent<HTMLFormElement>) => {
+    const tag = (e.target as HTMLElement).tagName;
+    if (e.key === 'Enter' && tag !== 'BUTTON' && tag !== 'TEXTAREA') {
+      e.preventDefault();
+    }
+  };
 
   // Total = (Qty × MRP) − Discount
   const subtotal = useMemo(
@@ -63,6 +71,8 @@ export default function SaleForm({
   useEffect(() => {
     if (formData.medicines.length > prevCount.current) {
       lastRowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      // Focus after scroll settles so dropdown positions correctly
+      setTimeout(() => lastMedInputRef.current?.focus(), 250);
     }
     prevCount.current = formData.medicines.length;
   }, [formData.medicines.length]);
@@ -72,7 +82,7 @@ export default function SaleForm({
     const med = formData.medicines[0];
     if (!med) return null;
     return (
-      <form onSubmit={onSubmit} className="space-y-4">
+      <form onSubmit={onSubmit} onKeyDown={blockEnterOnInputs} className="space-y-4">
         <div className="grid grid-cols-2 gap-3">
           <div className="col-span-2">
             <label className="label">Medicine Name *</label>
@@ -92,7 +102,7 @@ export default function SaleForm({
           <div>
             <label className="label">Qty *</label>
             <input type="number" className="input-field" value={med.quantity}
-              min="0.01" step="0.01"
+              min="1" step="1"
               onChange={(e) => onMedicineChange(0, 'quantity', e.target.value)} required />
           </div>
           <div>
@@ -104,13 +114,13 @@ export default function SaleForm({
           <div>
             <label className="label">Disc (%)</label>
             <input type="number" className="input-field" value={med.discount}
-              min="0" max="100" step="0.01"
+              min="0" max="100" step="1"
               onChange={(e) => onMedicineChange(0, 'discount', e.target.value)} />
           </div>
           <div>
             <label className="label">Total (₹)</label>
             <input type="number" className="input-field bg-blue-50 font-semibold"
-              value={med.total_amount} readOnly />
+              value={med.total_amount} readOnly tabIndex={-1} />
           </div>
         </div>
 
@@ -142,7 +152,7 @@ export default function SaleForm({
 
   // ── BILLING MODE ──────────────────────────────────────────────────────────
   return (
-    <form onSubmit={onSubmit} className="divide-y divide-gray-100">
+    <form onSubmit={onSubmit} onKeyDown={blockEnterOnInputs} className="divide-y divide-gray-100">
 
       {/* ── Customer ──────────────────────────────────────────────────────── */}
       <div className="p-5">
@@ -170,7 +180,7 @@ export default function SaleForm({
             <label className="label">Mobile Number</label>
             <AutocompleteInput
               value={formData.mobile_number}
-              onChange={(v) => onFieldChange('mobile_number', v)}
+              onChange={(v) => onFieldChange('mobile_number', v.replace(/\D/g, '').slice(0, 10))}
               onSelect={(v) => {
                 const sepIdx = v.indexOf(' | ');
                 if (sepIdx !== -1) {
@@ -184,6 +194,7 @@ export default function SaleForm({
               placeholder="Optional"
               className="input-field"
               inputType="tel"
+              maxLength={10}
             />
           </div>
         </div>
@@ -199,7 +210,7 @@ export default function SaleForm({
               {formData.medicines.length}
             </span>
           </div>
-          <button type="button" onClick={onAddMedicine}
+          <button type="button" onClick={onAddMedicine} tabIndex={-1}
             className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors shadow-sm">
             <Plus size={15} /> Add Medicine
           </button>
@@ -239,6 +250,7 @@ export default function SaleForm({
                     {/* Medicine Name */}
                     <td className="border-r border-gray-200 p-0">
                       <AutocompleteInput
+                        ref={isLast ? lastMedInputRef : undefined}
                         value={med.medicine_name}
                         onChange={(v) => onMedicineChange(idx, 'medicine_name', v)}
                         onSelect={(v) => onMedicineNameSelect?.(idx, v)}
@@ -265,7 +277,7 @@ export default function SaleForm({
                     {/* Qty */}
                     <td className="border-r border-gray-200 p-0">
                       <input type="number" className={`${ci} text-right`} placeholder="0"
-                        min="0.01" step="0.01"
+                        min="1" step="1"
                         value={med.quantity}
                         onChange={(e) => onMedicineChange(idx, 'quantity', e.target.value)} />
                     </td>
@@ -273,7 +285,7 @@ export default function SaleForm({
                     {/* MRP */}
                     <td className="border-r border-gray-200 p-0">
                       <input type="number" className={`${ci} text-right`} placeholder="0.00"
-                        min="0" step="0.01"
+                        min="1" step="1"
                         value={med.mrp}
                         onChange={(e) => onMedicineChange(idx, 'mrp', e.target.value)} />
                     </td>
@@ -281,12 +293,12 @@ export default function SaleForm({
                     {/* Discount */}
                     <td className="border-r border-gray-200 p-0">
                       <input type="number" className={`${ci} text-right`} placeholder="0"
-                        min="0" max="100" step="0.01"
+                        min="0" max="100" step="1"
                         value={med.discount}
                         onChange={(e) => onMedicineChange(idx, 'discount', e.target.value)} />
                     </td>
 
-                    {/* Total (computed, read-only) */}
+                    {/* Total (computed, read-only — excluded from tab order) */}
                     <td className="border-r border-gray-200 bg-blue-50/60 px-3 py-4">
                       <span className="block text-right text-base font-bold text-blue-700 tabular-nums">
                         {med.total_amount ? `₹${parseFloat(med.total_amount).toFixed(2)}` : '—'}
@@ -298,6 +310,7 @@ export default function SaleForm({
                       <div className="flex items-center justify-center gap-1">
                         {onDuplicateMedicine && (
                           <button type="button" onClick={() => onDuplicateMedicine(idx)}
+                            tabIndex={-1}
                             className="p-2 text-gray-300 hover:text-blue-500 hover:bg-blue-50 rounded transition-colors"
                             title="Duplicate">
                             <Copy size={15} />
@@ -305,6 +318,7 @@ export default function SaleForm({
                         )}
                         <button type="button" onClick={() => onRemoveMedicine(idx)}
                           disabled={formData.medicines.length === 1}
+                          tabIndex={-1}
                           title="Remove"
                           className={`p-2 rounded transition-colors ${
                             formData.medicines.length === 1
@@ -347,7 +361,7 @@ export default function SaleForm({
                 type="number"
                 className="w-28 text-right border-2 border-gray-200 rounded-lg px-2 py-1.5 text-sm bg-white focus:border-blue-500 focus:outline-none transition-colors"
                 placeholder="0"
-                min="0" max="100" step="0.01"
+                min="0" max="100" step="1"
                 value={formData.bill_discount}
                 onChange={(e) => onFieldChange('bill_discount', e.target.value)}
               />
@@ -392,13 +406,8 @@ export default function SaleForm({
       {/* ── Buttons ──────────────────────────────────────────────────────── */}
       <div className="px-5 py-5 flex flex-col gap-3 bg-gray-50/60">
         <button type="submit" className="btn-primary" disabled={loading}>
-          {loading ? 'Saving...' : 'Save Sale'}
+          {loading ? 'Saving...' : (submitLabel ?? 'Save Sale')}
         </button>
-        {onSubmitNew && (
-          <button type="button" className="btn-success" disabled={loading} onClick={onSubmitNew}>
-            Save &amp; New Entry
-          </button>
-        )}
       </div>
     </form>
   );

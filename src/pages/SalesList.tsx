@@ -1,11 +1,39 @@
 import { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Search, X } from 'lucide-react';
+import { Search, X, Calendar, Pencil, Printer } from 'lucide-react';
 import { useSales } from '../hooks/useSales';
 import type { Sale, SaleFormData, MedicineItem } from '../types';
-import { formatCurrency, formatDate, todayISO } from '../utils/helpers';
+import { formatCurrency, formatDate, todayISO, getDateRange } from '../utils/helpers';
 import SaleForm from '../components/SaleForm';
 import InvoiceModal from '../components/InvoiceModal';
+import InvoiceEditOverlay from '../components/InvoiceEditOverlay';
+import { printInvoice } from '../utils/printInvoice';
+
+type DatePreset = 'today' | 'yesterday' | 'last_7_days' | 'this_month' | 'custom';
+
+const PRESETS: { key: DatePreset; label: string }[] = [
+  { key: 'today', label: 'Today' },
+  { key: 'yesterday', label: 'Yesterday' },
+  { key: 'last_7_days', label: 'Last 7 Days' },
+  { key: 'this_month', label: 'This Month' },
+  { key: 'custom', label: 'Custom' },
+];
+
+const PAGE_TITLES: Record<DatePreset, string> = {
+  today: "Today's Sales",
+  yesterday: "Yesterday's Sales",
+  last_7_days: 'Sales · Last 7 Days',
+  this_month: 'Sales · This Month',
+  custom: 'Sales',
+};
+
+const EMPTY_MESSAGES: Record<DatePreset, string> = {
+  today: 'No sales recorded today',
+  yesterday: 'No sales recorded yesterday',
+  last_7_days: 'No sales in the last 7 days',
+  this_month: 'No sales this month',
+  custom: 'No sales in the selected date range',
+};
 
 function groupByInvoice(sales: Sale[]): Sale[][] {
   const map = new Map<string, Sale[]>();
@@ -21,16 +49,26 @@ function groupByInvoice(sales: Sale[]): Sale[][] {
 }
 
 export default function SalesList() {
-  const { fetchTodaySales, deleteSale, updateSale, loading } = useSales();
+  const { fetchSalesByDateRange, deleteSale, updateSale, updateInvoiceCustomer, loading } = useSales();
   const [sales, setSales] = useState<Sale[]>([]);
   const [search, setSearch] = useState('');
   const [selectedInvoiceNumber, setSelectedInvoiceNumber] = useState<string | null>(null);
+  const [editingInvoiceSales, setEditingInvoiceSales] = useState<Sale[] | null>(null);
   const [editingSale, setEditingSale] = useState<Sale | null>(null);
   const [editForm, setEditForm] = useState<SaleFormData | null>(null);
+  const [datePreset, setDatePreset] = useState<DatePreset>('today');
+  const [customStart, setCustomStart] = useState(todayISO());
+  const [customEnd, setCustomEnd] = useState(todayISO());
+
+  const { start: rangeStart, end: rangeEnd } = useMemo(
+    () => getDateRange(datePreset, customStart, customEnd),
+    [datePreset, customStart, customEnd],
+  );
 
   useEffect(() => {
-    fetchTodaySales().then(setSales);
-  }, [fetchTodaySales]);
+    if (datePreset === 'custom' && (!customStart || !customEnd)) return;
+    fetchSalesByDateRange(rangeStart, rangeEnd).then(setSales);
+  }, [fetchSalesByDateRange, rangeStart, rangeEnd]);
 
   const filtered = sales.filter((s) => {
     const q = search.toLowerCase();
@@ -46,10 +84,13 @@ export default function SalesList() {
 
   const totalAmount = filtered.reduce((s, x) => s + x.total_amount, 0);
 
-  // Sales for the currently selected invoice (live, from current state)
   const invoiceModalSales = selectedInvoiceNumber
     ? sales.filter((s) => s.invoice_number === selectedInvoiceNumber)
     : null;
+
+  const subtitleText = rangeStart === rangeEnd
+    ? formatDate(rangeStart)
+    : `${formatDate(rangeStart)} – ${formatDate(rangeEnd)}`;
 
   const handleDelete = async (id: string) => {
     const ok = await deleteSale(id);
@@ -83,6 +124,40 @@ export default function SalesList() {
     });
   };
 
+  const handleInvoiceSaved = (
+    invoiceNumber: string,
+    updated: Sale[],
+    inserted: Sale[],
+    removedIds: string[],
+  ) => {
+    setSales((prev) => {
+      const withoutRemoved = prev.filter((s) => !removedIds.includes(s.id));
+      const withUpdates = withoutRemoved.map((s) => {
+        const u = updated.find((u) => u.id === s.id);
+        return u ?? s;
+      });
+      return [...withUpdates, ...inserted];
+    });
+    setEditingInvoiceSales(null);
+  };
+
+  const handleUpdateCustomer = async (invoiceNumber: string, customerName: string, mobileNumber: string): Promise<boolean> => {
+    const ok = await updateInvoiceCustomer(invoiceNumber, customerName, mobileNumber);
+    if (ok) {
+      setSales((prev) =>
+        prev.map((s) =>
+          s.invoice_number === invoiceNumber
+            ? { ...s, customer_name: customerName.trim() || null, mobile_number: mobileNumber.trim() || null }
+            : s,
+        ),
+      );
+      toast.success('Customer info updated');
+    } else {
+      toast.error('Failed to update customer info');
+    }
+    return ok;
+  };
+
   const handleEditSave = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!editingSale || !editForm) return;
@@ -106,8 +181,48 @@ export default function SalesList() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="page-title">Today's Sales</h1>
-        <p className="text-gray-500 text-sm">{formatDate(todayISO())} · {filteredGroups.length} invoices</p>
+        <h1 className="page-title">{PAGE_TITLES[datePreset]}</h1>
+        <p className="text-gray-500 text-sm">{subtitleText} · {filteredGroups.length} invoices</p>
+      </div>
+
+      {/* Date Filter */}
+      <div className="space-y-2">
+        <div className="flex flex-wrap gap-2">
+          {PRESETS.map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => setDatePreset(key)}
+              className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                datePreset === key
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              {key === 'custom' && <Calendar size={13} />}
+              {label}
+            </button>
+          ))}
+        </div>
+        {datePreset === 'custom' && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <input
+              type="date"
+              className="input-field py-1.5 text-sm w-auto"
+              value={customStart}
+              max={customEnd || todayISO()}
+              onChange={(e) => setCustomStart(e.target.value)}
+            />
+            <span className="text-gray-400 text-sm">to</span>
+            <input
+              type="date"
+              className="input-field py-1.5 text-sm w-auto"
+              value={customEnd}
+              min={customStart}
+              max={todayISO()}
+              onChange={(e) => setCustomEnd(e.target.value)}
+            />
+          </div>
+        )}
       </div>
 
       {/* Search */}
@@ -142,7 +257,7 @@ export default function SalesList() {
 
       {!loading && filteredGroups.length === 0 && (
         <div className="card text-center py-10 text-gray-400">
-          {search ? `No results for "${search}"` : 'No sales recorded today'}
+          {search ? `No results for "${search}"` : EMPTY_MESSAGES[datePreset]}
         </div>
       )}
 
@@ -178,6 +293,20 @@ export default function SalesList() {
                     {paymentBadge(first.payment_mode)}
                   </div>
                 </div>
+                <div className="pt-1 border-t border-gray-100 flex items-center gap-3">
+                  <button
+                    onClick={() => setEditingInvoiceSales(group)}
+                    className="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700"
+                  >
+                    <Pencil size={12} /> Edit Invoice
+                  </button>
+                  <button
+                    onClick={() => printInvoice(group)}
+                    className="flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-gray-700"
+                  >
+                    <Printer size={12} /> Print
+                  </button>
+                </div>
               </div>
             );
           })}
@@ -194,6 +323,7 @@ export default function SalesList() {
                 <th className="table-header">Medicines</th>
                 <th className="table-header text-right">Total</th>
                 <th className="table-header">Payment</th>
+                <th className="table-header">Action</th>
               </tr>
             </thead>
             <tbody>
@@ -222,6 +352,22 @@ export default function SalesList() {
                       {formatCurrency(groupTotal)}
                     </td>
                     <td className="table-cell">{paymentBadge(first.payment_mode)}</td>
+                    <td className="table-cell">
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => setEditingInvoiceSales(group)}
+                          className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 px-2 py-1 rounded-md transition-colors"
+                        >
+                          <Pencil size={12} /> Edit
+                        </button>
+                        <button
+                          onClick={() => printInvoice(group)}
+                          className="flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-700 hover:bg-gray-50 px-2 py-1 rounded-md transition-colors"
+                        >
+                          <Printer size={12} /> Print
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 );
               })}
@@ -234,11 +380,20 @@ export default function SalesList() {
                 <td className="px-3 py-2 text-right font-bold text-gray-900">
                   {formatCurrency(totalAmount)}
                 </td>
-                <td />
+                <td colSpan={2} />
               </tr>
             </tfoot>
           </table>
         </div>
+      )}
+
+      {/* Full Invoice Edit Overlay */}
+      {editingInvoiceSales && (
+        <InvoiceEditOverlay
+          sales={editingInvoiceSales}
+          onClose={() => setEditingInvoiceSales(null)}
+          onSaved={handleInvoiceSaved}
+        />
       )}
 
       {/* Invoice Detail Modal */}
@@ -248,6 +403,7 @@ export default function SalesList() {
           onClose={() => setSelectedInvoiceNumber(null)}
           onEdit={handleEditFromModal}
           onDelete={handleDelete}
+          onUpdateCustomer={handleUpdateCustomer}
         />
       )}
 

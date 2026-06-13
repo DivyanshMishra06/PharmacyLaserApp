@@ -6,7 +6,7 @@ import { getPharmacyProfile } from '../hooks/usePharmacyProfile';
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/quick-sale', icon: PlusCircle, label: 'Quick Sale' },
-  { to: '/sales-list', icon: List, label: 'Sales List' },
+  { to: '/sales-list', icon: List, label: 'Sales Register' },
   { to: '/reports', icon: BarChart3, label: 'Reports' },
   { to: '/import', icon: Upload, label: 'Import Data' },
   { to: '/profile', icon: UserCircle, label: 'Profile' },

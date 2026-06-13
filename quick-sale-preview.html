@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Quick Sale — Space Optimised</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f1f5f9;
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* ── Sidebar ────────────────────────────── */
+    aside {
+      width: 240px;
+      background: #1e3a5f;
+      color: #bfdbfe;
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+    }
+    .logo {
+      display: flex; align-items: center; gap: 10px;
+      padding: 18px 16px; border-bottom: 1px solid #2d4f7a;
+    }
+    .logo-icon {
+      width: 36px; height: 36px; background: #3b82f6;
+      border-radius: 8px; display: flex; align-items: center;
+      justify-content: center; font-size: 18px; flex-shrink: 0;
+    }
+    .logo-name { font-size: 13px; font-weight: 700; color: white; }
+    .logo-sub  { font-size: 11px; color: #93c5fd; }
+    nav { flex: 1; padding: 10px 8px; }
+    .nav-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 9px 12px; border-radius: 8px;
+      font-size: 13px; cursor: pointer; margin-bottom: 2px;
+    }
+    .nav-item.active { background: #2563eb; color: white; }
+    .nav-item:hover:not(.active) { background: #1d4ed8; color: white; }
+
+    /* ── Main column ────────────────────────── */
+    .main {
+      flex: 1; display: flex; flex-direction: column;
+      overflow: hidden; min-width: 0;
+    }
+
+    /* ── Page header ────────────────────────── */
+    .page-header {
+      padding: 12px 24px 0;
+      flex-shrink: 0;
+      display: flex; align-items: baseline; gap: 8px;
+    }
+    .page-title { font-size: 18px; font-weight: 800; color: #111827; }
+    .page-sub   { font-size: 12px; color: #9ca3af; }
+
+    /* ── White form card ────────────────────── */
+    .card {
+      margin: 10px 24px 14px;
+      background: white;
+      border: 1px solid #e5e7eb;
+      border-radius: 14px;
+      display: flex; flex-direction: column;
+      flex: 1; overflow: hidden; min-height: 0;
+    }
+
+    /* ════════════════════════════════════════
+       ZONE 1 — Customer Info (compact)
+    ════════════════════════════════════════ */
+    .zone-customer {
+      padding: 10px 20px;
+      border-bottom: 1px solid #f3f4f6;
+      flex-shrink: 0;
+    }
+    .section-label {
+      font-size: 10px; font-weight: 800; color: #9ca3af;
+      letter-spacing: .08em; text-transform: uppercase; margin-bottom: 6px;
+    }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .field label { display: block; font-size: 11px; font-weight: 600; color: #374151; margin-bottom: 3px; }
+    .field input {
+      width: 100%; padding: 7px 11px;
+      border: 1px solid #d1d5db; border-radius: 8px;
+      font-size: 13px; color: #111827; outline: none;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    .field input:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px #dbeafe; }
+
+    /* ════════════════════════════════════════
+       ZONE 2 — Medicines (flex-1, scrollable)
+    ════════════════════════════════════════ */
+    .zone-medicines {
+      flex: 1; display: flex; flex-direction: column;
+      overflow: hidden; min-height: 0;
+    }
+    .med-bar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 7px 20px;
+      background: #f9fafb; border-bottom: 1px solid #e5e7eb;
+      flex-shrink: 0;
+    }
+    .med-bar-left { display: flex; align-items: center; gap: 8px; }
+    .badge {
+      width: 18px; height: 18px; border-radius: 50%;
+      background: #2563eb; color: white;
+      font-size: 9px; font-weight: 800;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .table-scroll { flex: 1; overflow-y: auto; min-height: 0; }
+    table { width: 100%; border-collapse: collapse; min-width: 760px; }
+    thead tr { background: #374151; color: white; position: sticky; top: 0; z-index: 1; }
+    th {
+      padding: 9px 12px; font-size: 11px; font-weight: 700;
+      text-align: left; white-space: nowrap;
+    }
+    th.right { text-align: right; }
+    th.center { text-align: center; width: 56px; }
+    tbody tr { border-bottom: 1px solid #f3f4f6; }
+    tbody tr:nth-child(even) { background: #f9fafb; }
+    tbody tr:hover { background: #eff6ff; }
+    td { padding: 0; }
+    td input {
+      width: 100%; padding: 8px 12px;
+      border: none; background: transparent;
+      font-size: 13px; color: #111827; outline: none;
+    }
+    td input:focus { background: #eff6ff; }
+    td input.right { text-align: right; }
+    td.num { padding: 8px 12px; text-align: center; color: #9ca3af; font-size: 12px; font-weight: 700; }
+    td.total { padding: 8px 12px; text-align: right; font-weight: 800; color: #2563eb; background: #eff6ff; }
+    td.total.empty { color: #d1d5db; font-weight: 400; }
+    td.actions { padding: 4px 6px; text-align: center; }
+    .icon-btn {
+      background: none; border: none; cursor: pointer;
+      color: #d1d5db; padding: 5px; border-radius: 4px; font-size: 14px;
+    }
+    .icon-btn:hover { color: #ef4444; background: #fee2e2; }
+
+    /* ════════════════════════════════════════
+       ZONE 3 — Footer (compact, no scroll)
+    ════════════════════════════════════════ */
+    .zone-footer {
+      border-top: 2px solid #e5e7eb;
+      padding: 10px 20px;
+      flex-shrink: 0;
+      display: flex;
+      gap: 20px;
+      align-items: center;
+      background: #fafafa;
+    }
+
+    /* Payment mode */
+    .footer-payment { display: flex; flex-direction: column; gap: 5px; flex-shrink: 0; }
+    .pay-btns { display: flex; gap: 6px; }
+    .pay-btn {
+      padding: 7px 16px; border-radius: 8px;
+      border: 2px solid #d1d5db; background: white;
+      font-size: 12px; font-weight: 700; color: #6b7280; cursor: pointer;
+    }
+    .pay-btn.cash   { background: #16a34a; border-color: #16a34a; color: white; }
+    .pay-btn.upi    { background: #2563eb; border-color: #2563eb; color: white; }
+    .pay-btn.credit { background: #f97316; border-color: #f97316; color: white; }
+
+    /* Vertical divider */
+    .vdivider { width: 1px; background: #e5e7eb; align-self: stretch; }
+
+    /* Right side: totals + remarks + save all in one area */
+    .footer-right { flex: 1; display: flex; flex-direction: column; gap: 8px; }
+
+    .totals-row { display: flex; align-items: center; gap: 12px; }
+    .total-chip {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 12px; color: #6b7280;
+    }
+    .total-chip strong { color: #111827; font-size: 13px; font-weight: 700; }
+    .disc-in {
+      width: 54px; padding: 4px 8px;
+      border: 1px solid #d1d5db; border-radius: 6px;
+      font-size: 12px; outline: none; text-align: right;
+    }
+    .grand-pill {
+      margin-left: auto;
+      display: flex; align-items: center; gap: 10px;
+      background: #2563eb; color: white;
+      border-radius: 8px; padding: 6px 14px;
+    }
+    .grand-pill span  { font-size: 12px; font-weight: 600; }
+    .grand-pill strong { font-size: 18px; font-weight: 800; }
+
+    .action-row { display: flex; align-items: center; gap: 10px; }
+    .remarks-wrap { display: flex; align-items: center; gap: 8px; flex: 1; }
+    .remarks-wrap label { font-size: 11px; font-weight: 600; color: #6b7280; white-space: nowrap; }
+    .remarks-wrap input {
+      flex: 1; padding: 7px 11px;
+      border: 1px solid #d1d5db; border-radius: 8px;
+      font-size: 13px; outline: none;
+    }
+    .btn-save {
+      padding: 9px 30px;
+      background: #2563eb; color: white; border: none;
+      border-radius: 8px; font-size: 13px; font-weight: 800;
+      cursor: pointer; white-space: nowrap;
+    }
+    .btn-save:hover { background: #1d4ed8; }
+
+    /* thin scrollbar */
+    .table-scroll::-webkit-scrollbar { width: 4px; }
+    .table-scroll::-webkit-scrollbar-track { background: #f8fafc; }
+    .table-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+  </style>
+</head>
+<body>
+
+<!-- Sidebar -->
+<aside>
+  <div class="logo">
+    <div class="logo-icon">💊</div>
+    <div>
+      <div class="logo-name">Fahrenheit Pharmacy</div>
+      <div class="logo-sub">Sales Ledger</div>
+    </div>
+  </div>
+  <nav>
+    <div class="nav-item">🏠 Dashboard</div>
+    <div class="nav-item active">➕ Quick Sale</div>
+    <div class="nav-item">📋 Sales Register</div>
+    <div class="nav-item">📊 Reports</div>
+    <div class="nav-item">⬆ Import Data</div>
+    <div class="nav-item">👤 Profile</div>
+  </nav>
+</aside>
+
+<!-- Main -->
+<div class="main">
+  <div class="page-header">
+    <div class="page-title">Sale Entry</div>
+    <div class="page-sub">Create a new customer bill</div>
+  </div>
+
+  <div class="card">
+
+    <!-- ZONE 1: Customer (compact padding) -->
+    <div class="zone-customer">
+      <div class="section-label">Customer Info</div>
+      <div class="grid2">
+        <div class="field">
+          <label>Customer Name</label>
+          <input type="text" placeholder="Optional" />
+        </div>
+        <div class="field">
+          <label>Mobile Number</label>
+          <input type="tel" placeholder="Optional" maxlength="10" />
+        </div>
+      </div>
+    </div>
+
+    <!-- ZONE 2: Medicines — header bar, no duplicate button -->
+    <div class="zone-medicines">
+      <div class="med-bar">
+        <div class="med-bar-left">
+          <span class="section-label" style="margin:0">Medicines</span>
+          <span class="badge">3</span>
+        </div>
+        <!-- blue "+ Add Medicine" button removed — use the link below the table instead -->
+      </div>
+
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:40px">#</th>
+              <th>Medicine Name *</th>
+              <th style="width:100px">Batch</th>
+              <th style="width:88px">Expiry</th>
+              <th class="right" style="width:72px">Qty *</th>
+              <th class="right" style="width:110px">MRP (₹) *</th>
+              <th class="right" style="width:82px">Disc (%)</th>
+              <th class="right" style="width:110px">Total (₹)</th>
+              <th class="center"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="num">1</td>
+              <td><input type="text" value="ACIMIZ MR TAB" /></td>
+              <td><input type="text" value="A1234" /></td>
+              <td><input type="text" value="12/27" /></td>
+              <td><input type="number" class="right" value="1" min="1" step="1" /></td>
+              <td><input type="number" class="right" value="120.00" min="0" step="0.01" /></td>
+              <td><input type="number" class="right" value="5" min="0" step="1" /></td>
+              <td class="total">₹114.00</td>
+              <td class="actions"><button class="icon-btn">🗑</button></td>
+            </tr>
+            <tr>
+              <td class="num">2</td>
+              <td><input type="text" value="AB PHYLLINE TAB" /></td>
+              <td><input type="text" value="B5678" /></td>
+              <td><input type="text" value="06/26" /></td>
+              <td><input type="number" class="right" value="2" min="1" step="1" /></td>
+              <td><input type="number" class="right" value="150.00" min="0" step="0.01" /></td>
+              <td><input type="number" class="right" value="0" min="0" step="1" /></td>
+              <td class="total">₹300.00</td>
+              <td class="actions"><button class="icon-btn">🗑</button></td>
+            </tr>
+            <tr>
+              <td class="num">3</td>
+              <td><input type="text" placeholder="Enter medicine name" /></td>
+              <td><input type="text" placeholder="Batch no." /></td>
+              <td><input type="text" placeholder="MM/YY" /></td>
+              <td><input type="number" class="right" placeholder="0" min="1" step="1" /></td>
+              <td><input type="number" class="right" placeholder="0.00" min="0" step="0.01" /></td>
+              <td><input type="number" class="right" placeholder="0" min="0" step="1" /></td>
+              <td class="total empty">—</td>
+              <td class="actions"><button class="icon-btn">🗑</button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <!-- "+ Add another medicine" link — the one button to add rows -->
+      <div style="padding: 7px 20px; border-top: 1px solid #f3f4f6; background: #fafafa; flex-shrink:0;">
+        <button style="background:none;border:none;color:#2563eb;font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:5px;">
+          ＋ Add another medicine
+        </button>
+      </div>
+    </div>
+
+    <!-- ZONE 3: Footer — payment | divider | totals+remarks+save -->
+    <div class="zone-footer">
+
+      <div class="footer-payment">
+        <div class="section-label">Payment Mode *</div>
+        <div class="pay-btns">
+          <button class="pay-btn cash">Cash</button>
+          <button class="pay-btn">UPI</button>
+          <button class="pay-btn">Credit</button>
+        </div>
+      </div>
+
+      <div class="vdivider"></div>
+
+      <div class="footer-right">
+        <div class="totals-row">
+          <div class="total-chip">Subtotal: <strong>₹414.00</strong></div>
+          <div class="total-chip">
+            Bill Disc (%)
+            <input type="number" class="disc-in" placeholder="0" min="0" max="100" step="1" />
+          </div>
+          <div class="grand-pill">
+            <span>Grand Total</span>
+            <strong>₹414.00</strong>
+          </div>
+        </div>
+        <div class="action-row">
+          <div class="remarks-wrap">
+            <label>Remarks</label>
+            <input type="text" placeholder="Optional..." />
+          </div>
+          <button class="btn-save">Save Sale</button>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>
