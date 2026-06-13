@@ -125,7 +125,7 @@ export default function SalesList() {
   };
 
   const handleInvoiceSaved = (
-    invoiceNumber: string,
+    _invoiceNumber: string,
     updated: Sale[],
     inserted: Sale[],
     removedIds: string[],
