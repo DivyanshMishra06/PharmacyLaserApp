@@ -11,7 +11,7 @@ export function formatCurrency(amount: number): string {
 // Rounds grand total: decimal <= 0.50 → floor, > 0.50 → ceil
 export function roundGrandTotal(amount: number): number {
   const decimal = amount - Math.floor(amount);
-  return decimal <= 0.5 ? Math.floor(amount) : Math.ceil(amount);
+  return decimal < 0.5 ? Math.floor(amount) : Math.ceil(amount);
 }
 
 export function formatGrandTotal(amount: number): string {
